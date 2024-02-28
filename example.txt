@@ -1,0 +1,238 @@
+use rand::prelude::SliceRandom;
+use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::io::{self, BufRead, BufReader, Read, Write};
+use std::path::{Path, PathBuf};
+
+use structopt::StructOpt;
+
+#[derive(Debug, StructOpt)]
+#[structopt(
+    name = "Coded",
+    about = "A program for encoding, decoding files."
+)]
+struct Opt {
+    #[structopt(short = "e", long = "encode", value_name = "INPUT_FILE")]
+    encode: Option<PathBuf>,
+
+    #[structopt(short = "d", long = "decode", value_name = "INPUT_FILE")]
+    decode: Option<PathBuf>,
+
+    #[structopt(short = "r", long = "recreate", value_name = "DICTIONARY_FILE")]
+    recreate: Option<PathBuf>,
+
+    #[structopt(short = "map", long = "dictionary", value_name = "DICTIONARY_FILE")]
+    dictionary: Option<PathBuf>,
+}
+
+fn trim_quotes_and_colon(input: &str) -> char {
+    let trimmed = input.trim_matches(|c| c == '\'' || c == ':');
+
+    if trimmed == r#"\n"# {
+        '\n'
+    } else if trimmed == r#"\t"# {
+        '\t'
+    } else if trimmed == r#"\r"# {
+        '\r'
+    } else if trimmed == r#"\x0b"# {
+        '\x0b'
+    } else if trimmed == r#"\x0c"# {
+        '\x0c'
+    } else {
+        trimmed.chars().next().unwrap_or('\0')
+    }
+}
+
+// fn read_from_file<P>(filename: P) -> Result<HashMap<char, String>, io::Error>
+// where
+    // P: AsRef<Path>,
+// {
+    // let file = File::open(filename)?;
+    // let reader = BufReader::new(file);
+
+    // let mut b_codes = HashMap::new();
+
+    // for line in reader.lines() {
+        // let line = line?;
+        // let mut iter = line.split_whitespace();
+
+        // if let (Some(key), Some(value)) = (iter.next(), iter.next()) {
+            // // Convert key to char and value to String
+            // let key_char: char = trim_quotes_and_colon(key);
+            // println!("{:?}", key_char);
+            // let value_string: String = String::from(value);
+
+            // b_codes.insert(key_char, value_string);
+        // } else {
+            // return Err(io::Error::new(
+                // io::ErrorKind::InvalidData,
+                // "Invalid data format in the file",
+            // ));
+        // }
+    // }
+
+    // Ok(b_codes)
+// }
+
+fn read_from_file<P>(filename: P) -> Result<HashMap<char, String>, io::Error>
+where
+    P: AsRef<Path>,
+{
+    let file = File::open(filename)?;
+    let reader = BufReader::new(file);
+
+    let mut b_codes = HashMap::new();
+
+    for line in reader.lines() {
+        let line = line?;
+        let mut iter = line.split_whitespace();
+
+        if let (Some(key), Some(value)) = (iter.next(), iter.next()) {
+            // Convert key to char and value to String
+            let key_char: char = trim_quotes_and_colon(key);
+            let value_string: String = String::from(value);
+
+            b_codes.insert(key_char, value_string);
+            println!("{:?}", key_char);
+        } else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid data format in the file",
+            ));
+        }
+    }
+    println!("{:?}", b_codes);
+    Ok(b_codes)
+}
+
+fn recreate(characters: &[char]) -> HashMap<char, String> {
+    let num_symbols = "0123456789".chars().collect::<Vec<char>>();
+    let alpha_symbols =
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".chars().collect::<Vec<char>>();
+
+    let mut rng = rand::thread_rng();
+
+    let result: HashMap<char, String> = characters
+        .iter()
+        .map(|&c| {
+            let random_num = *num_symbols.choose(&mut rng).unwrap();
+            let random_alpha1 = *alpha_symbols.choose(&mut rng).unwrap();
+            let random_alpha2 = *alpha_symbols.choose(&mut rng).unwrap();
+            let token = format!("{}{}{}", random_num, random_alpha1, random_alpha2);
+            (c, token)
+        })
+        .collect();
+
+    result
+}
+
+fn save_to_file(dictionary: &HashMap<char, String>, filename: &str) -> io::Result<()> {
+    let mut file = OpenOptions::new().write(true).create(true).open(filename)?;
+
+    for (key, value) in dictionary {
+        let line: String = format!(r"{}: {}", &format!(r"{:?}", key as &char) as &str, value);
+        writeln!(file, r"{}", line)?;
+    }
+
+    Ok(())
+}
+
+fn split_by(input: &str, _step: usize) -> io::Result<Vec<String>> {
+    let mut counter = 0;
+    let mut output = Vec::new();
+    let mut output_str = String::new();
+    let list_str: Vec<char> = input.chars().collect();
+
+    for _i in list_str.iter() {
+        for j in 0..3 {
+            if j + counter > list_str.len() - 1 {
+                break;
+            } else {
+                output_str.push(list_str[j + counter]);
+            }
+        }
+        counter += 3;
+        if output_str.is_empty() {
+            break;
+        }
+        output.push(output_str.clone());
+        output_str.clear();
+    }
+    Ok(output)
+}
+
+fn encode(filename: &str, b_codes: &HashMap<char, String>) -> Result<(), io::Error> {
+    let mut file = File::open(filename)?;
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+
+    let mut output = String::new();
+
+    for c in content.chars() {
+        if let Some(encoded) = b_codes.get(&c) {
+            output.push_str(encoded);
+        }
+    }
+
+    let mut o = File::create(format!("{}.cdd", filename))?;
+    o.write_all(output.as_bytes())?;
+    Ok(())
+}
+
+fn decode(filename: &str, b_codes: &HashMap<char, String>) -> Result<(), io::Error> {
+    let mut file = File::open(filename)?;
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+
+    let splitted = split_by(&content, 3)?;
+    let mut str_to_write = String::new();
+
+    for element in splitted {
+        if let Some(value) = b_codes.get(&element.chars().next().unwrap()) {
+            str_to_write.push_str(value);
+        }
+    }
+
+    let ofn = filename.trim_end_matches(".cdd").split('.').collect::<Vec<_>>();
+    let outfilename = format!("{}_encoded.{}", ofn[0], ofn[1]);
+
+    let mut outfile = File::create(outfilename)?;
+    outfile.write_all(str_to_write.as_bytes())?;
+    Ok(())
+}
+
+fn main() {
+    let opt = Opt::from_args();
+
+    if let Some(dictionary_file) = opt.recreate {
+        let characters = vec![
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'а', 'б', 'в', 'г', 'д', 'е', 'ё',
+            'ж', 'з', 'и', 'й', 'к', 'л', 'м', 'н', 'о', 'п', 'р', 'с', 'т', 'у', 'ф', 'х', 'ц',
+            'ч', 'ш', 'щ', 'ъ', 'ы', 'ь', 'э', 'ю', 'я', 'А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ё', 'Ж',
+            'З', 'И', 'Й', 'К', 'Л', 'М', 'Н', 'О', 'П', 'Р', 'С', 'Т', 'У', 'Ф', 'Х', 'Ц', 'Ч',
+            'Ш', 'Щ', 'Ъ', 'Ы', 'Ь', 'Э', 'Ю', 'Я', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',
+            'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O',
+            'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '!', '"', '#', '$', '%', '&',
+            '\'', '(', ')', '*', '+', ',', '-', '.', '/', ':', ';', '<', '=', '>', '?', '@', '[',
+            '\\', ']', '^', '_', '`', '{', '|', '}', '~', ' ', '\t', '\n', '\r', '\x0b', '\x0c',
+        ];
+        let dictionary = recreate(&characters);
+        save_to_file(&dictionary, dictionary_file.to_str().unwrap())
+            .expect("Error recreating dictionary");
+        println!("Dictionary recreated successfully.");
+    } else if let Some(input_file) = opt.encode {
+        if let Some(dictionary_file) = opt.dictionary {
+            let b_codes = read_from_file(dictionary_file).expect("Error reading dictionary");
+            encode(input_file.to_str().unwrap(), &b_codes).expect("Error encoding");
+            println!("File encoded successfully.");
+        }
+    } else if let Some(input_file) = opt.decode {
+        if let Some(dictionary_file) = opt.dictionary {
+            let b_codes = read_from_file(dictionary_file).expect("Error reading dictionary");
+            decode(input_file.to_str().unwrap(), &b_codes).expect("Error decoding");
+            println!("File decoded successfully.");
+        }
+    } else {
+        println!("No action specified. Use --encode, --decode, or --recreate.");
+    }
+}
