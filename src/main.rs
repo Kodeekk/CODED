@@ -42,7 +42,7 @@ fn gen_token() -> String {
 
 fn gen_chars() -> Vec<char> {
 	(0..=std::char::MAX as u32).filter_map(std::char::from_u32).collect()
-
+}
 fn write_dict() -> io::Result<()> {
 	let mut file = File::create("dictionary")?;
 	let chars = gen_chars();
