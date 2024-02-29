@@ -70,27 +70,27 @@ fn gen_token() -> String {
 	// }
 // }
 
-fn gen_chars(mode: MODE) -> io::Result<Vec<char>> {
+fn gen_chars(mode: MODE) -> Vec<char> {
     match mode {
         MODE::ASCII => {
-            Ok((0..=127 as u32).filter_map(std::char::from_u32).collect::<Vec<_>>())
+            (0..=127 as u32).filter_map(std::char::from_u32).collect::<Vec<_>>()
         }
         MODE::AsciiWithCyrillic => {
-            Ok((0..=127 as u32)
+            (0..=127 as u32)
                 .filter_map(std::char::from_u32)
                 .chain((1040..=1103 as u32).filter_map(std::char::from_u32))
                 .chain((1024..=1279 as u32).filter_map(std::char::from_u32))
-                .collect::<Vec<_>>())
+                .collect::<Vec<_>>()
         }
         MODE::UNICODE => {
-            Ok((0..=std::char::MAX as u32).filter_map(std::char::from_u32).collect::<Vec<_>>())
+            (0..=std::char::MAX as u32).filter_map(std::char::from_u32).collect::<Vec<_>>()
         }
     }
 }
 
 fn write_dict(dictionary_filename: &str) -> io::Result<()> {
 	let mut file = File::create(dictionary_filename)?;
-	let chars = gen_chars(MODE::ASCII).unwrap();
+	let chars = gen_chars(MODE::ASCII);
 	let chars_length = chars.len();
 	let show_percentage = true;
 	let show_raw_percentage = false;
@@ -98,8 +98,11 @@ fn write_dict(dictionary_filename: &str) -> io::Result<()> {
 	let mut percentage = 0.0;
 	let mut percentage_new = 0.0;
 	
+	writeln!(file, "!!¡->¿>u_specials>>")?;
+	
 	for chr in chars {
-		writeln!(file, "{} e-> {:?}", gen_token(), chr);
+		writeln!(file, "{} e-> {:?}", gen_token(), format!(r"{}", chr));
+		//todo: if pending symbol is pointer to new section, insert section definition before pending symbol
 		written += 1;
 		percentage_new = (written as f64 / chars_length as f64) * 100.00;
 		if percentage != percentage_new {
@@ -114,64 +117,37 @@ fn write_dict(dictionary_filename: &str) -> io::Result<()> {
 	Ok(())
 }
 
-fn read_dict(dictionary_filename: &str) -> io::Result<HashMap<String, String>> {
+fn read_dict(dictionary_filename: &str) -> io::Result<HashMap<String, HashMap<String, String>>> {
 	let file = File::open(dictionary_filename)?;
 	let reader = BufReader::new(file);
-	let mut dict: HashMap<String, String> = HashMap::new();
+	let mut dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+	let mut section_map: HashMap<String, String> = HashMap::new();
 	let mut lines = vec![];
+	let mut section: &str = "";
 	
-	for line in reader.lines() { lines.push(line?.to_string()); }
+	for line in reader.lines() {
+		lines.push(line?.to_string());
+	}
 	
 	for line in &lines {
 		let line_split: Vec<_> = line.split(" e-> ").collect();
-		let (k, v) = (line_split[1], line_split[0]);
-		//println!("k: {}, v: {}", k, v);
-		dict.insert(k.to_string(), v.to_string());
+		if line.starts_with("!!¡->¿>") {
+			section = match line.strip_prefix("!!¡->¿>") {
+				Some(inner) => inner,
+				None => "",
+			}
+		} else {
+			let (k, v) = (line_split[0], line_split[1]);
+			println!("k: {}, v: {}", k, v);
+			section_map.insert(k.to_string(), v.to_string());
+			dict.insert(section.to_string(), section_map.clone());
+		}
 	}
 	Ok(dict)
 }
 
-fn file_to_chars(filepath: &str) -> io::Result<Vec<String>> {
-	let file = File::open(filepath)?;
-	let reader = BufReader::new(file);
-	let mut lines = vec![];
-	let mut chars = vec![];
-	for line in reader.lines() { lines.push(line?.to_string()); }
-	for line in lines {
-		for c in line.chars() {
-			chars.push(c.to_string());
-		}
-	}
-	Ok(chars)
-}
-
-fn encode(filepath: &str, dictionary_filename: &str) -> io::Result<()> {
-	let dict = read_dict(dictionary_filename).unwrap();
-	let file = file_to_chars(filepath).unwrap();
-	let mut result = String::from("");
-	println!("{:?}", dict);
-	for chr in file {
-		println!("{}", chr);
-		match chr {
-			Some(v) => {
-				result.push_str(
-					dict.get( &v )
-				);
-			}
-			None => {
-				println!("failed to find token by symbol");
-			}
-		}
-	}
-	let output_file = File::create(format!("{}.cdd", filepath));
-	writeln!(output_file?, "{}", result);
-	Ok(())
-}
-
-fn main() -> io::Result<()> {
+fn main() {
 	write_dict("dictionary");
-	encode("example.txt", "dictionary");
 	//println!("{:?}", read_dict("dictionary").unwrap());
-	//read_dict("dictionary").unwrap();
-	Ok(())
+	read_dict("dictionary").unwrap();
 }
