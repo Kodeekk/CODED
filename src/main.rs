@@ -43,8 +43,8 @@ fn gen_token() -> String {
 fn gen_chars() -> Vec<char> {
 	(0..=std::char::MAX as u32).filter_map(std::char::from_u32).collect()
 }
-fn write_dict() -> io::Result<()> {
-	let mut file = File::create("dictionary")?;
+fn write_dict(dictionary_filename: &str) -> io::Result<()> {
+	let mut file = File::create(dictionary_filename)?;
 	let chars = gen_chars();
 	let chars_length = chars.len();
 	let show_percentage = true;
@@ -57,6 +57,7 @@ fn write_dict() -> io::Result<()> {
 	
 	for chr in chars {
 		writeln!(file, "{} e-> {:?}", gen_token(), format!(r"{}", chr));
+		//todo: if pending symbol is pointer to new section, insert section definition before pending symbol
 		written += 1;
 		percentage_new = (written as f64 / chars_length as f64) * 100.00;
 		if percentage != percentage_new {
@@ -71,12 +72,13 @@ fn write_dict() -> io::Result<()> {
 	Ok(())
 }
 
-fn read_dict() -> io::Result<HashMap<String, HashMap<String, String>>> {
-	let file = File::open("dictionary")?;
+fn read_dict(dictionary_filename: &str) -> io::Result<HashMap<String, HashMap<String, String>>> {
+	let file = File::open(dictionary_filename)?;
 	let reader = BufReader::new(file);
 	let mut dict: HashMap<String, HashMap<String, String>> = HashMap::new();
+	let mut section_map: HashMap<String, String> = HashMap::new();
 	let mut lines = vec![];
-	let mut section = "";
+	let mut section: &str = "";
 	for line in reader.lines() {
 		lines.push(line?.to_string());
 	}
@@ -84,15 +86,22 @@ fn read_dict() -> io::Result<HashMap<String, HashMap<String, String>>> {
 		let mut line_split: Vec<_> = line.split(" e-> ").collect();
 		let (k, v) = (line_split[0], line_split[1]);
 		if line.starts_with("!!¡->¿>") {
-			if let Some(string) = line.strip_prefix("!!¡->¿>") {
+			if let Some(string) = &line.clone().strip_prefix("!!¡->¿>") {
 				section = string;
 			}
 		}
-		dict.get(section).insert(k.to_string(), v.to_string());
+		section_map.insert(
+			k.to_string(),
+			v.to_string()
+		);
+		dict.insert(
+			section.to_string(),
+			section_map.clone()
+		);
 	}
-	Ok(map)
+	Ok(dict)
 }
 fn main() {
-	//write_dict();
-	println!("{:?}", read_dict().unwrap());
+	//write_dict("dictionary");
+	println!("{:?}", read_dict("dictionary").unwrap());
 }
